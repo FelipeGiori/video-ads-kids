@@ -5,10 +5,11 @@ import re
 import sys
 import pickle
 import threading
+import pandas as pd
 from datetime import datetime
 from time import sleep, time
 from selenium import webdriver
-from random import uniform
+from random import uniform, shuffle
 from pyvirtualdisplay import Display
 from log import send2db
 
@@ -22,17 +23,16 @@ class Webdriver(threading.Thread):
         self.email = persona.email
         self.password = persona.password
         self.session_time = persona.session_time # em horas
-        self.skip_topic = 0.35
-        self.skip_offtopic = 0.35
-        self.p_train = 1
+        self.skip_topic = 0
+        self.skip_offtopic = 0
+        self.p_train = 0.5
         self.display = Display(visible = False, size=(800, 600), backend='xvfb').start()
         self.driver = self.setup_driver()
     
     def run(self):
         print("Run")
         self.login_youtube()
-        topic_urls = self.get_subscribed_playlist()
-        offtopic_urls = self.get_subscribed_playlist()
+        topic_urls, offtopic_urls = self.get_playlist_random()
         self.browse(topic_urls, offtopic_urls)
         self.save_cookies()
         self.quit()
@@ -91,6 +91,23 @@ class Webdriver(threading.Thread):
             print("Could not log in")
             return False
 
+    def get_playlist_random(self):
+        try:
+            data = pd.read_csv("kids_playlist.csv", sep=';')
+            topic_playlist = data[data['theme'] == 'kids']
+            offtopic_playlist = data[data['theme'] == 'offtopic']
+
+            topic_playlist = list(topic_playlist['content_id'].values)
+            offtopic_playlist = list(offtopic_playlist['content_id'].values)
+            shuffle(topic_playlist)
+            shuffle(offtopic_playlist)
+
+            return topic_playlist, offtopic_playlist
+        except:
+            print("Could not build playlist")
+            self.quit()
+
+    
     # Only works if the user is logged in
     def get_subscribed_playlist(self):
         self.driver.get('https://www.youtube.com/feed/subscriptions')
@@ -142,10 +159,7 @@ class Webdriver(threading.Thread):
                 j += 1
         
     
-    def watch(self, video_id, skip):
-        WATCH_TIME_LIMIT = 10*60 # 10 minutos
-        timeout = time() + WATCH_TIME_LIMIT
-        
+    def watch(self, video_id, skip):        
         start_time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         send2db(self.id, start_time, video_id, '', 'STARTED WATCHING VCONTENT')
         
@@ -153,25 +167,19 @@ class Webdriver(threading.Thread):
         self.driver.get(video_url)
         
         while(self.player_status() is None):
-            if(timeout < time()):
-                break # Waiting for the video player...
-            else:
-                sleep(2)
+            sleep(2)
         
         # If skip is True, Skips the video-ad
         # If skip is False, watch the whole video-ad
         if(self.player_status() == -1):
             time_start = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             send2db(self.id, time_start, video_id, '', 'STARTED WATCHING AD')            
-            self.watching_ad(skip, video_id, timeout)
+            self.watching_ad(skip, video_id)
 
         # Check if the video streaming has finished
         if(self.player_status() != 0 and self.player_status() != 5): 
             while(self.player_status() != 0 and self.driver.current_url.find('watch?v=') != -1):
-                if(timeout < time()):
-                    break
-                else:
-                    sleep(3)
+                sleep(3)
                 
                 try:
                     self.driver.find_element_by_css_selector('.videoAdUiSkipButton').click()
@@ -201,30 +209,25 @@ class Webdriver(threading.Thread):
         return status
         
     
-    def watching_ad(self, skip, video_id, timeout):
+    def watching_ad(self, skip, video_id):
         if(uniform(0, 1) <= skip): 
-            self.skip_ad(video_id, timeout)
+            self.skip_ad(video_id)
         else: 
             while(self.player_status() == -1 and self.driver.current_url.find('watch?v=')):
-                if(timeout < time()):
-                    break
-                else:
-                    sleep(2)
+                sleep(2)
+
             time_now = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             send2db(self.id, time_now, video_id, '', 'FINISHED WATCHING AD')
 
-    def skip_ad(self, video_id, timeout):
+    def skip_ad(self, video_id):
         while(self.player_status() == -1):
-            if(timeout < time()):
-                break
-            else:
-                try:
-                    self.driver.find_element_by_css_selector('.videoAdUiSkipButton').click()
-                    time_now = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    send2db(self.id, time_now, video_id, '', 'AD SKIPPED')
-                    return 0
-                except Exception as _:
-                    sleep(2)
+            try:
+                self.driver.find_element_by_css_selector('.videoAdUiSkipButton').click()
+                time_now = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                send2db(self.id, time_now, video_id, '', 'AD SKIPPED')
+                return 0
+            except Exception as _:
+                sleep(2)
     
             
     def save_cookies(self):

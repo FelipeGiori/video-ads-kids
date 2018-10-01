@@ -15,6 +15,8 @@ def get_time():
     mg_times = ["9:00", "15:00", "19:00"]
     pb_times = ["11:00", "17:00", "21:00"]
 
+    # TODO: Adicionar docker da persona 7
+    # TODO: Setup da vpn para Sao Paulo
     docker = ["d6f18b0f8e45bebf19f2de53c469cebc429d2f013b896ba3b1f474e9bd43b271",
              "3a7bb8ba7918c766debf1571924f8eb056938606dfb8cd63d05505b7a761772f",
              "3ee141a9362caaaaf0ebaedc2ba3734e2f11fdf385ad8bea1da59aa8e5c59a67",
